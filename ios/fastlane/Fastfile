@@ -37,7 +37,12 @@ platform :ios do
     ]
 
     if signing_mode == "match"
-      profile_name = ENV.fetch("PROFILE_NAME")
+      # Derive profile name: "match AppStore org.example.app" unless explicitly overridden
+      match_type   = ENV.fetch("MATCH_TYPE", "appstore")
+      profile_name = ENV.fetch("PROFILE_NAME") { "match #{match_type.capitalize} #{app_id}" }
+      # For "appstore" → "AppStore" (Fastlane convention)
+      profile_name = profile_name.sub(/\bmatch appstore\b/i, "match AppStore")
+
       xcargs_parts << "PROVISIONING_PROFILE_SPECIFIER=\"#{profile_name}\""
     else
       # secrets mode: reference the profile by UUID + point at the temp keychain
@@ -47,7 +52,7 @@ platform :ios do
 
     # ── Build export options ────────────────────────────────────────────────
     export_profiles = if signing_mode == "match"
-      { app_id => ENV.fetch("PROFILE_NAME") }
+      { app_id => profile_name }
     else
       { app_id => ENV.fetch("PROFILE_UUID") }
     end
