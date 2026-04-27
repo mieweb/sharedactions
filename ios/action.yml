@@ -1,0 +1,157 @@
+name: "Fastlane iOS Build & Upload"
+description: >
+  Composite action that signs, archives, and optionally uploads an iOS app to
+  TestFlight. Supports two signing modes: `match` (git-stored certs) and
+  `secrets` (raw cert + profile from GitHub secrets).
+
+inputs:
+  # ── Mode ──────────────────────────────────────────────────────────────────
+  signing_mode:
+    description: "Signing strategy: 'match' (git repo) or 'secrets' (raw cert + profile)"
+    required: true
+
+  # ── App identity ──────────────────────────────────────────────────────────
+  app_identifier:
+    description: "Bundle ID (e.g. org.mieweb.os.dev)"
+    required: true
+  apple_team_id:
+    description: "Apple Developer Team ID"
+    required: true
+
+  # ── Match-mode inputs (ignored when signing_mode=secrets) ─────────────────
+  match_git_url:
+    description: "HTTPS URL of the match signing repo"
+    required: false
+  match_git_basic_authorization:
+    description: "Base64-encoded user:token for match git repo"
+    required: false
+  match_password:
+    description: "Encryption passphrase for match-stored certs/profiles"
+    required: false
+  match_type:
+    description: "Match profile type"
+    required: false
+    default: "appstore"
+  match_readonly:
+    description: "If true, match will never create or renew certs/profiles"
+    required: false
+    default: "true"
+  match_storage_mode:
+    description: "Match storage backend"
+    required: false
+    default: "git"
+
+  # ── Secrets-mode inputs (ignored when signing_mode=match) ─────────────────
+  ios_cert_p12_base64:
+    description: "Base64-encoded distribution certificate (.p12)"
+    required: false
+  ios_cert_password:
+    description: "Password for the .p12 certificate"
+    required: false
+  ios_prov_profile_base64:
+    description: "Base64-encoded provisioning profile (.mobileprovision)"
+    required: false
+
+  # ── App Store Connect API ─────────────────────────────────────────────────
+  apple_api_key_id:
+    description: "App Store Connect API Key ID"
+    required: true
+  apple_api_issuer_id:
+    description: "App Store Connect Issuer ID"
+    required: true
+  apple_api_key_p8_base64:
+    description: "Base64-encoded App Store Connect API key (.p8)"
+    required: true
+
+  # ── Build configuration ───────────────────────────────────────────────────
+  lane:
+    description: "Fastlane lane to execute"
+    required: false
+    default: "ios_build_upload"
+  workspace_path:
+    description: "Path to the .xcworkspace file"
+    required: true
+  xcode_scheme:
+    description: "Xcode scheme name"
+    required: true
+  build_configuration:
+    description: "Xcode build configuration"
+    required: false
+    default: "Release"
+  export_method:
+    description: "Xcode export method"
+    required: false
+    default: "app-store"
+  profile_name:
+    description: "Provisioning profile name (required for match mode, e.g. 'match AppStore org.example.app')"
+    required: false
+  upload_to_testflight:
+    description: "Upload the IPA to TestFlight after building"
+    required: false
+    default: "true"
+
+  # ── Ruby setup ────────────────────────────────────────────────────────────
+  ruby_version:
+    description: "Ruby version for Fastlane"
+    required: false
+    default: "3.4"
+  setup_ruby:
+    description: "Install Ruby + bundle gems (set false if caller already did)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    # ── 1. Ruby + Fastlane gems (optional) ──────────────────────────────────
+    - name: Setup Ruby and install Fastlane
+      if: inputs.setup_ruby == 'true'
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby_version }}
+        bundler-cache: true
+        working-directory: ${{ github.action_path }}
+
+    # ── 2. Secrets-mode: import cert + profile into keychain ────────────────
+    - name: Import signing certificate and profile
+      if: inputs.signing_mode == 'secrets'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        IOS_CERT_P12_BASE64:      ${{ inputs.ios_cert_p12_base64 }}
+        IOS_CERT_PASSWORD:         ${{ inputs.ios_cert_password }}
+        IOS_PROV_PROFILE_BASE64:   ${{ inputs.ios_prov_profile_base64 }}
+      run: bash scripts/import-signing.sh
+
+    # ── 3. Run Fastlane lane ────────────────────────────────────────────────
+    - name: Run Fastlane ${{ inputs.lane }}
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        # Signing mode
+        SIGNING_MODE:                ${{ inputs.signing_mode }}
+        # App identity
+        APP_IDENTIFIER:              ${{ inputs.app_identifier }}
+        APPLE_TEAM_ID:               ${{ inputs.apple_team_id }}
+        # Match
+        MATCH_PASSWORD:              ${{ inputs.match_password }}
+        MATCH_GIT_BASIC_AUTHORIZATION: ${{ inputs.match_git_basic_authorization }}
+        MATCH_GIT_URL:               ${{ inputs.match_git_url }}
+        MATCH_TYPE:                  ${{ inputs.match_type }}
+        MATCH_READONLY:              ${{ inputs.match_readonly }}
+        MATCH_STORAGE_MODE:          ${{ inputs.match_storage_mode }}
+        # Apple API
+        APPLE_API_KEY_ID:            ${{ inputs.apple_api_key_id }}
+        APPLE_API_ISSUER_ID:         ${{ inputs.apple_api_issuer_id }}
+        APPLE_API_KEY_P8_BASE64:     ${{ inputs.apple_api_key_p8_base64 }}
+        # Build
+        WORKSPACE_PATH:              ${{ inputs.workspace_path }}
+        XCODE_SCHEME:                ${{ inputs.xcode_scheme }}
+        BUILD_CONFIGURATION:         ${{ inputs.build_configuration }}
+        EXPORT_METHOD:               ${{ inputs.export_method }}
+        PROFILE_NAME:                ${{ inputs.profile_name }}
+        UPLOAD_TO_TESTFLIGHT:        ${{ inputs.upload_to_testflight }}
+        # Fastlane tunables
+        FASTLANE_SKIP_UPDATE_CHECK:  "1"
+        FASTLANE_DISABLE_COLORS:     "1"
+      run: bundle exec fastlane ${{ inputs.lane }}

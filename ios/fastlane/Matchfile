@@ -1,0 +1,5 @@
+# Only used when signing_mode=match — all values from ENV
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode(ENV["MATCH_STORAGE_MODE"] || "git")
+type(ENV["MATCH_TYPE"] || "appstore")
+git_basic_authorization(ENV["MATCH_GIT_BASIC_AUTHORIZATION"])

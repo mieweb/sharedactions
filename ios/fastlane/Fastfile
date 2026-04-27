@@ -1,0 +1,75 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and optionally upload an iOS app to TestFlight"
+  lane :ios_build_upload do
+    signing_mode = ENV.fetch("SIGNING_MODE")
+    app_id       = ENV.fetch("APP_IDENTIFIER")
+    team_id      = ENV.fetch("APPLE_TEAM_ID")
+
+    # Build the API key object once — reused by match (if applicable) and pilot
+    api_key = app_store_connect_api_key(
+      key_id:                ENV.fetch("APPLE_API_KEY_ID"),
+      issuer_id:             ENV.fetch("APPLE_API_ISSUER_ID"),
+      key_content:           ENV.fetch("APPLE_API_KEY_P8_BASE64"),
+      is_key_content_base64: true,
+      in_house:              false
+    )
+
+    # ── Signing: match mode ─────────────────────────────────────────────────
+    if signing_mode == "match"
+      # Creates a temporary keychain so match can import certs without GUI prompts
+      setup_ci
+
+      match(
+        type:           ENV.fetch("MATCH_TYPE", "appstore"),
+        app_identifier: app_id,
+        readonly:       ENV.fetch("MATCH_READONLY", "true") != "false",
+        api_key:        api_key
+      )
+    end
+    # secrets mode: cert + profile already imported by scripts/import-signing.sh
+
+    # ── Build xcargs ────────────────────────────────────────────────────────
+    xcargs_parts = [
+      "CODE_SIGN_STYLE=Manual",
+      "DEVELOPMENT_TEAM=#{team_id}"
+    ]
+
+    if signing_mode == "match"
+      profile_name = ENV.fetch("PROFILE_NAME")
+      xcargs_parts << "PROVISIONING_PROFILE_SPECIFIER=\"#{profile_name}\""
+    else
+      # secrets mode: reference the profile by UUID + point at the temp keychain
+      xcargs_parts << "PROVISIONING_PROFILE_SPECIFIER=#{ENV.fetch('PROFILE_UUID')}"
+      xcargs_parts << "OTHER_CODE_SIGN_FLAGS=\"--keychain #{ENV.fetch('KEYCHAIN_PATH')}\""
+    end
+
+    # ── Build export options ────────────────────────────────────────────────
+    export_profiles = if signing_mode == "match"
+      { app_id => ENV.fetch("PROFILE_NAME") }
+    else
+      { app_id => ENV.fetch("PROFILE_UUID") }
+    end
+
+    # ── Archive + export IPA ────────────────────────────────────────────────
+    gym(
+      workspace:      ENV.fetch("WORKSPACE_PATH"),
+      scheme:         ENV.fetch("XCODE_SCHEME"),
+      configuration:  ENV.fetch("BUILD_CONFIGURATION", "Release"),
+      export_method:  ENV.fetch("EXPORT_METHOD", "app-store"),
+      xcargs:         xcargs_parts.join(" "),
+      export_options: {
+        provisioningProfiles: export_profiles
+      }
+    )
+
+    # ── Upload to TestFlight (optional) ─────────────────────────────────────
+    unless ENV.fetch("UPLOAD_TO_TESTFLIGHT", "true") == "false"
+      upload_to_testflight(
+        api_key:                           api_key,
+        skip_waiting_for_build_processing: true
+      )
+    end
+  end
+end
