@@ -1,0 +1,163 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Reusable workflow: iOS Meteor/Cordova Build & Upload
+#
+# Full pipeline: Xcode → Node → Meteor → CocoaPods → Fastlane → TestFlight
+# Callers only need app-specific inputs; signing secrets flow via `secrets: inherit`.
+#
+# Expected org-level secrets (passed automatically via `secrets: inherit`):
+#   APPLE_TEAM_ID, MATCH_GIT_BASIC_AUTHORIZATION, MATCH_PASSWORD,
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, APPLE_API_KEY_P8_BASE64
+# ─────────────────────────────────────────────────────────────────────────────
+name: iOS Meteor/Cordova Build & Upload
+
+on:
+  workflow_call:
+    inputs:
+      # ── App identity ────────────────────────────────────────────────────────
+      app_identifier:
+        description: "Target iOS bundle ID (e.g. org.mieweb.os.dev)"
+        required: true
+        type: string
+      meteor_server:
+        description: "Meteor DDP server URL baked into the Cordova build"
+        required: true
+        type: string
+
+      # ── Firebase configs (vary per environment — pass from caller secrets) ─
+      firebase_ios_config_base64:
+        description: "Base64-encoded GoogleService-Info.plist"
+        required: true
+        type: string
+      firebase_android_config_base64:
+        description: "Base64-encoded google-services.json (required by Cordova even for iOS builds)"
+        required: true
+        type: string
+
+      # ── mobile-config.js patching (for non-production environments) ────────
+      app_name:
+        description: "Patched display name for mobile-config.js. Leave empty to skip name patching."
+        required: false
+        type: string
+        default: ""
+      original_app_identifier:
+        description: "Bundle ID currently in mobile-config.js (replaced with app_identifier)"
+        required: false
+        type: string
+        default: "org.mieweb.opensource"
+      original_app_name:
+        description: "App name currently in mobile-config.js (replaced with app_name)"
+        required: false
+        type: string
+        default: "MIEAuth"
+
+      # ── Toolchain ───────────────────────────────────────────────────────────
+      xcode_path:
+        description: "Absolute path to Xcode.app"
+        required: false
+        type: string
+        default: "/Applications/Xcode_26.3.app"
+      node_version:
+        description: "Node.js version"
+        required: false
+        type: string
+        default: "20"
+
+      # ── Build configuration ─────────────────────────────────────────────────
+      signing_mode:
+        description: "'match' or 'secrets'"
+        required: false
+        type: string
+        default: "match"
+      upload_to_testflight:
+        description: "Upload IPA to TestFlight after building"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      # ── 1. Checkout caller's repo ──────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Select Xcode ───────────────────────────────────────────────────
+      - name: Select Xcode
+        env:
+          XCODE_PATH: ${{ inputs.xcode_path }}
+        run: |
+          ls /Applications | grep -E '^Xcode' || true
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+
+      # ── 3. Node + Meteor ──────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Meteor
+        run: |
+          curl https://install.meteor.com/ | sh
+          echo "$HOME/.meteor" >> $GITHUB_PATH
+
+      - name: Install Meteor dependencies
+        run: meteor npm install
+
+      # ── 4. Firebase configs (must exist before meteor build) ──────────────
+      - name: Decode Firebase config files
+        env:
+          FIREBASE_IOS: ${{ inputs.firebase_ios_config_base64 }}
+          FIREBASE_ANDROID: ${{ inputs.firebase_android_config_base64 }}
+        run: |
+          mkdir -p private/ios private/android
+          echo "$FIREBASE_IOS"     | base64 -d > private/ios/GoogleService-Info.plist
+          echo "$FIREBASE_ANDROID" | base64 -d > private/android/google-services.json
+
+      # ── 5. Patch mobile-config.js for non-production environments ─────────
+      - name: Patch mobile-config.js
+        if: inputs.app_identifier != inputs.original_app_identifier || inputs.app_name != ''
+        env:
+          APP_ID: ${{ inputs.app_identifier }}
+          ORIG_APP_ID: ${{ inputs.original_app_identifier }}
+          APP_NAME: ${{ inputs.app_name }}
+          ORIG_APP_NAME: ${{ inputs.original_app_name }}
+        run: |
+          if [[ "$APP_ID" != "$ORIG_APP_ID" ]]; then
+            sed -i '' "s/id: \"$ORIG_APP_ID\"/id: \"$APP_ID\"/" mobile-config.js
+          fi
+          if [[ -n "$APP_NAME" ]]; then
+            sed -i '' "s/name: \"$ORIG_APP_NAME\"/name: \"$APP_NAME\"/" mobile-config.js
+          fi
+          grep -E "^\s*(id|name):" mobile-config.js
+
+      # ── 6. Meteor/Cordova iOS build ──────────────────────────────────────
+      - name: Build iOS with Meteor/Cordova
+        env:
+          METEOR_SERVER: ${{ inputs.meteor_server }}
+        run: |
+          meteor build ./ios-build \
+            --platforms ios \
+            --server="$METEOR_SERVER"
+
+      # ── 7. CocoaPods (Podfile is generated by Cordova) ───────────────────
+      - name: Install CocoaPods dependencies
+        run: |
+          PODFILE_DIR=$(dirname "$(find ios-build -name 'Podfile' -type f | head -1)")
+          cd "$PODFILE_DIR"
+          pod install
+
+      # ── 8. Fastlane: sign, archive, upload ───────────────────────────────
+      - name: Build & upload iOS to TestFlight
+        uses: mieweb/sharedactions/ios@v1
+        with:
+          app_identifier:              ${{ inputs.app_identifier }}
+          apple_team_id:               ${{ secrets.APPLE_TEAM_ID }}
+          match_git_basic_authorization: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          match_password:              ${{ secrets.MATCH_PASSWORD }}
+          apple_api_key_id:            ${{ secrets.APPLE_API_KEY_ID }}
+          apple_api_issuer_id:         ${{ secrets.APPLE_API_ISSUER_ID }}
+          apple_api_key_p8_base64:     ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          signing_mode:                ${{ inputs.signing_mode }}
+          upload_to_testflight:        ${{ inputs.upload_to_testflight }}
