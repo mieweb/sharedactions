@@ -52,9 +52,13 @@ platform :ios do
       { app_id => ENV.fetch("PROFILE_UUID") }
     end
 
+    # ── Resolve workspace path (relative to app checkout, not action dir) ──
+    ws_path = ENV.fetch("WORKSPACE_PATH")
+    ws_path = File.join(ENV.fetch("GITHUB_WORKSPACE"), ws_path) unless ws_path.start_with?("/")
+
     # ── Archive + export IPA ────────────────────────────────────────────────
     gym(
-      workspace:      ENV.fetch("WORKSPACE_PATH"),
+      workspace:      ws_path,
       scheme:         ENV.fetch("XCODE_SCHEME"),
       configuration:  ENV.fetch("BUILD_CONFIGURATION", "Release"),
       export_method:  ENV.fetch("EXPORT_METHOD", "app-store"),

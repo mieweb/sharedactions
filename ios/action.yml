@@ -144,7 +144,8 @@ runs:
         APPLE_API_KEY_ID:            ${{ inputs.apple_api_key_id }}
         APPLE_API_ISSUER_ID:         ${{ inputs.apple_api_issuer_id }}
         APPLE_API_KEY_P8_BASE64:     ${{ inputs.apple_api_key_p8_base64 }}
-        # Build
+        # Build (GITHUB_WORKSPACE needed to resolve relative paths)
+        GITHUB_WORKSPACE:            ${{ github.workspace }}
         WORKSPACE_PATH:              ${{ inputs.workspace_path }}
         XCODE_SCHEME:                ${{ inputs.xcode_scheme }}
         BUILD_CONFIGURATION:         ${{ inputs.build_configuration }}
