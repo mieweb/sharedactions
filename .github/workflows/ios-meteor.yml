@@ -2,7 +2,16 @@
 # Reusable workflow: iOS Meteor/Cordova Build & Upload
 #
 # Full pipeline: Xcode → Node → Meteor → CocoaPods → Fastlane → TestFlight
-# Callers pass app-specific inputs + map secrets explicitly.
+#
+# Callers use `secrets: inherit` — the workflow references secrets by
+# conventional names directly. No per-secret mapping needed.
+#
+# Required secrets (org or repo level):
+#   APPLE_TEAM_ID, MATCH_GIT_BASIC_AUTHORIZATION, MATCH_PASSWORD,
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, APPLE_API_KEY_P8_BASE64
+#
+# Optional secrets (for Firebase — step is skipped if absent):
+#   FIREBASE_IOS_PLIST_BASE64, FIREBASE_ANDROID_JSON_BASE64
 # ─────────────────────────────────────────────────────────────────────────────
 name: iOS Meteor/Cordova Build & Upload
 
@@ -60,27 +69,6 @@ on:
         type: boolean
         default: true
 
-    # ── Secrets (caller maps these explicitly) ──────────────────────────────
-    secrets:
-      APPLE_TEAM_ID:
-        required: true
-      MATCH_GIT_BASIC_AUTHORIZATION:
-        required: true
-      MATCH_PASSWORD:
-        required: true
-      APPLE_API_KEY_ID:
-        required: true
-      APPLE_API_ISSUER_ID:
-        required: true
-      APPLE_API_KEY_P8_BASE64:
-        required: true
-      FIREBASE_IOS_PLIST_BASE64:
-        description: "Base64-encoded GoogleService-Info.plist"
-        required: true
-      FIREBASE_ANDROID_JSON_BASE64:
-        description: "Base64-encoded google-services.json (required by Cordova even for iOS builds)"
-        required: true
-
 jobs:
   build:
     runs-on: macos-latest
@@ -112,8 +100,9 @@ jobs:
       - name: Install Meteor dependencies
         run: meteor npm install
 
-      # ── 4. Firebase configs (must exist before meteor build) ──────────────
+      # ── 4. Firebase configs (optional — skipped if secrets are absent) ────
       - name: Decode Firebase config files
+        if: ${{ secrets.FIREBASE_IOS_PLIST_BASE64 != '' }}
         env:
           FIREBASE_IOS: ${{ secrets.FIREBASE_IOS_PLIST_BASE64 }}
           FIREBASE_ANDROID: ${{ secrets.FIREBASE_ANDROID_JSON_BASE64 }}
