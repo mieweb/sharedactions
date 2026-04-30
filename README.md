@@ -1,4 +1,4 @@
-# sharedactions
+# actions
 
 Reusable composite GitHub Actions for mobile app CI/CD.
 
@@ -20,7 +20,7 @@ Supports two code-signing strategies.
 
 ```yaml
 - name: Build & upload iOS to TestFlight
-  uses: mieweb/sharedactions/ios@v1
+  uses: mieweb/actions/ios@v1
   with:
     signing_mode: match
     app_identifier: org.mieweb.os.dev
@@ -40,7 +40,7 @@ Supports two code-signing strategies.
 
 ```yaml
 - name: Build & upload iOS to TestFlight
-  uses: mieweb/sharedactions/ios@v1
+  uses: mieweb/actions/ios@v1
   with:
     signing_mode: secrets
     app_identifier: org.mieweb.opensource
