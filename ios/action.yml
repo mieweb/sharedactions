@@ -38,10 +38,6 @@ inputs:
     description: "If true, match will never create or renew certs/profiles"
     required: false
     default: "true"
-  match_storage_mode:
-    description: "Match storage backend"
-    required: false
-    default: "git"
 
   # ── Secrets-mode inputs (ignored when signing_mode=match) ─────────────────
   ios_cert_p12_base64:
@@ -66,10 +62,6 @@ inputs:
     required: true
 
   # ── Build configuration ───────────────────────────────────────────────────
-  lane:
-    description: "Fastlane lane to execute"
-    required: false
-    default: "ios_build_upload"
   ios_build_dir:
     description: "Directory containing the Cordova/Xcode build output. The action auto-discovers the .xcworkspace and scheme inside it."
     required: false
@@ -88,9 +80,10 @@ inputs:
     description: "Xcode export method"
     required: false
     default: "app-store"
-  profile_name:
-    description: "Override: provisioning profile name. If omitted, derived from match_type + app_identifier (e.g. 'match AppStore org.example.app')"
+  run_pod_install:
+    description: "Run `pod install` inside the discovered build directory before Fastlane (needed for Cordova-generated projects)"
     required: false
+    default: "false"
   upload_to_testflight:
     description: "Upload the IPA to TestFlight after building"
     required: false
@@ -151,8 +144,19 @@ runs:
         IOS_PROV_PROFILE_BASE64:   ${{ inputs.ios_prov_profile_base64 }}
       run: bash scripts/import-signing.sh
 
-    # ── 4. Run Fastlane lane ────────────────────────────────────────────────
-    - name: Run Fastlane ${{ inputs.lane }}
+    # ── 4. CocoaPods (opt-in; needed for Cordova-generated projects) ────────
+    - name: Install CocoaPods dependencies
+      if: inputs.run_pod_install == 'true'
+      shell: bash
+      env:
+        WORKSPACE_PATH: ${{ inputs.workspace_path || steps.discover.outputs.workspace }}
+      run: |
+        PODFILE_DIR=$(dirname "$WORKSPACE_PATH")
+        cd "$PODFILE_DIR"
+        pod install
+
+    # ── 5. Run Fastlane lane ────────────────────────────────────────────────
+    - name: Run Fastlane
       shell: bash
       working-directory: ${{ github.action_path }}
       env:
@@ -167,7 +171,6 @@ runs:
         MATCH_GIT_URL:               ${{ inputs.match_git_url }}
         MATCH_TYPE:                  ${{ inputs.match_type }}
         MATCH_READONLY:              ${{ inputs.match_readonly }}
-        MATCH_STORAGE_MODE:          ${{ inputs.match_storage_mode }}
         # Apple API
         APPLE_API_KEY_ID:            ${{ inputs.apple_api_key_id }}
         APPLE_API_ISSUER_ID:         ${{ inputs.apple_api_issuer_id }}
@@ -178,9 +181,8 @@ runs:
         XCODE_SCHEME:                ${{ inputs.xcode_scheme || steps.discover.outputs.scheme }}
         BUILD_CONFIGURATION:         ${{ inputs.build_configuration }}
         EXPORT_METHOD:               ${{ inputs.export_method }}
-        PROFILE_NAME:                ${{ inputs.profile_name }}
         UPLOAD_TO_TESTFLIGHT:        ${{ inputs.upload_to_testflight }}
         # Fastlane tunables
         FASTLANE_SKIP_UPDATE_CHECK:  "1"
         FASTLANE_DISABLE_COLORS:     "1"
-      run: bundle exec fastlane ${{ inputs.lane }}
+      run: bundle exec fastlane ios_build_upload

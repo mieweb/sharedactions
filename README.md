@@ -1,104 +1,133 @@
 # actions
 
-Reusable composite GitHub Actions for mobile app CI/CD.
+Reusable composite GitHub Actions and workflows for mieweb CI/CD pipelines.
 
-## ios
+Any developer in the mieweb org can call these from their caller workflow —
+use `secrets: inherit` and pass the required inputs.
+
+## Components
+
+### `setup-meteor` — Composite action
+
+Sets up the Meteor/Cordova build environment: checks out the repo, selects
+Xcode, installs Node.js and Meteor, and runs `meteor npm install`.
+
+```yaml
+- uses: mieweb/actions/setup-meteor@v1
+  with:
+    xcode_path:   /Applications/Xcode_26.app  # optional, default
+    node_version: "20"                       # optional, default
+```
+
+### `ios` — Composite action
 
 Signs, archives, and optionally uploads an iOS app to TestFlight via Fastlane.
 Supports two code-signing strategies.
-
-## Signing modes
 
 | Mode | How it works | When to use |
 |---|---|---|
 | `match` | Fetches encrypted cert + profile from a shared git repo, decrypts with `match_password` | Multiple repos share one signing identity |
 | `secrets` | Decodes a raw `.p12` cert + `.mobileprovision` from GitHub secrets, imports into a temporary keychain | Single repo, or you want to avoid a signing repo dependency |
 
-## Usage
-
-### Match mode
-
 ```yaml
-- name: Build & upload iOS to TestFlight
-  uses: mieweb/actions/ios@v1
+- uses: mieweb/actions/ios@v1
   with:
     signing_mode: match
     app_identifier: org.mieweb.os.dev
     apple_team_id: ${{ secrets.APPLE_TEAM_ID }}
-    match_git_url: https://github.com/mieweb/mobile-signing
     match_git_basic_authorization: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
     match_password: ${{ secrets.MATCH_PASSWORD }}
     apple_api_key_id: ${{ secrets.APPLE_API_KEY_ID }}
     apple_api_issuer_id: ${{ secrets.APPLE_API_ISSUER_ID }}
     apple_api_key_p8_base64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-    workspace_path: ${{ steps.xcode.outputs.workspace }}
-    xcode_scheme: ${{ steps.xcode.outputs.scheme }}
-    profile_name: "match AppStore org.mieweb.os.dev"
 ```
 
-### Secrets mode
+### `ios-meteor.yml` — Reusable workflow
+
+Full pipeline for Meteor/Cordova iOS apps: setup → optional pre-build hook →
+Meteor build → CocoaPods → Fastlane sign/archive → TestFlight upload.
+
+#### Basic usage
 
 ```yaml
-- name: Build & upload iOS to TestFlight
-  uses: mieweb/actions/ios@v1
-  with:
-    signing_mode: secrets
-    app_identifier: org.mieweb.opensource
-    apple_team_id: ${{ secrets.APPLE_TEAM_ID }}
-    ios_cert_p12_base64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-    ios_cert_password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
-    ios_prov_profile_base64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-    apple_api_key_id: ${{ secrets.APPLE_API_KEY_ID }}
-    apple_api_issuer_id: ${{ secrets.APPLE_API_ISSUER_ID }}
-    apple_api_key_p8_base64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-    workspace_path: ${{ steps.xcode.outputs.workspace }}
-    xcode_scheme: ${{ steps.xcode.outputs.scheme }}
+jobs:
+  ios:
+    uses: mieweb/actions/.github/workflows/ios-meteor.yml@v1
+    secrets: inherit
+    with:
+      app_identifier: org.mieweb.os.dev
+      meteor_server: https://app.example.com
 ```
 
-## Inputs
+#### With a pre-build hook (e.g. Firebase setup)
+
+```yaml
+jobs:
+  ios:
+    uses: mieweb/actions/.github/workflows/ios-meteor.yml@v1
+    secrets: inherit
+    with:
+      app_identifier: org.mieweb.os.dev
+      meteor_server: https://app.example.com
+      pre_build_script: scripts/setup-firebase.sh
+```
+
+The `pre_build_script` runs after the environment is set up but before
+`meteor build`. Use it for any project-specific setup (Firebase configs,
+environment files, asset generation, etc.).
+
+#### Workflow inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `signing_mode` | **yes** | — | `match` or `secrets` |
 | `app_identifier` | **yes** | — | Bundle ID (e.g. `org.mieweb.os.dev`) |
+| `meteor_server` | **yes** | — | Meteor DDP server URL |
+| `xcode_path` | | `/Applications/Xcode_26.app` | Absolute path to Xcode.app |
+| `node_version` | | `20` | Node.js version |
+| `pre_build_script` | | — | Path to a shell script in the caller's repo |
+| `signing_mode` | | `match` | `match` or `secrets` |
+| `upload_to_testflight` | | `true` | Upload IPA to TestFlight |
+
+#### Required secrets (org or repo level)
+
+`APPLE_TEAM_ID`, `MATCH_GIT_BASIC_AUTHORIZATION`, `MATCH_PASSWORD`,
+`APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_P8_BASE64`
+
+### `ios` action inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `signing_mode` | | `match` | `match` or `secrets` |
+| `app_identifier` | **yes** | — | Bundle ID |
 | `apple_team_id` | **yes** | — | Apple Developer Team ID |
-| `match_git_url` | if match | — | HTTPS URL of the match signing repo |
+| `match_git_url` | if match | `https://github.com/mieweb/mobile-signing` | Match signing repo URL |
 | `match_git_basic_authorization` | if match | — | Base64 `user:token` for the signing repo |
 | `match_password` | if match | — | Encryption passphrase for match |
 | `match_type` | | `appstore` | Match profile type |
 | `match_readonly` | | `true` | Never create/renew certs in CI |
-| `match_storage_mode` | | `git` | Match storage backend |
 | `ios_cert_p12_base64` | if secrets | — | Base64 distribution cert (.p12) |
 | `ios_cert_password` | if secrets | — | Password for the .p12 |
 | `ios_prov_profile_base64` | if secrets | — | Base64 provisioning profile |
 | `apple_api_key_id` | **yes** | — | App Store Connect API Key ID |
 | `apple_api_issuer_id` | **yes** | — | App Store Connect Issuer ID |
 | `apple_api_key_p8_base64` | **yes** | — | Base64 API key (.p8) |
-| `lane` | | `ios_build_upload` | Fastlane lane to execute |
-| `workspace_path` | **yes** | — | Path to `.xcworkspace` |
-| `xcode_scheme` | **yes** | — | Xcode scheme name |
-| `build_configuration` | | `Release` | Xcode build configuration |
-| `export_method` | | `app-store` | Xcode export method |
-| `profile_name` | if match | — | Profile name (e.g. `match AppStore org.example.app`) |
+| `workspace_path` | | auto-discovered | Path to `.xcworkspace` |
+| `xcode_scheme` | | auto-discovered | Xcode scheme name |
+| `run_pod_install` | | `false` | Run `pod install` before Fastlane (set `true` for Cordova) |
 | `upload_to_testflight` | | `true` | Upload IPA to TestFlight |
 | `ruby_version` | | `3.4` | Ruby version for Fastlane |
-| `setup_ruby` | | `true` | Install Ruby + gems (false if caller handles it) |
 
 ## Org-level secrets (recommended)
 
 Set shared signing secrets at the **GitHub org level** so every repo inherits
-them automatically. The action doesn't care whether a secret comes from org or
-repo scope — it just receives the value via `with:`.
-
-Repos can override with repo-level secrets when they need a different cert or
-profile (e.g. a different bundle ID).
+them automatically. Repos can override with repo-level secrets when they need
+a different cert or profile.
 
 ## Important notes
 
 - **`match_readonly` should always be `true` in CI.** Only set to `false` for
   one-time local seeding of the match signing repo.
-- **Xcode must be selected before calling this action.** The action does not
-  install or select Xcode — the caller workflow should pin the Xcode version
-  with `sudo xcode-select -s /Applications/Xcode_X.Y.app/Contents/Developer`.
+- **Xcode must be selected before calling the `ios` action directly.** The
+  `ios-meteor.yml` workflow and `setup-meteor` action handle this automatically.
 - **The `.xcworkspace` must already exist.** Build your native project (e.g.
-  `meteor build`, `pod install`) before invoking this action.
+  `meteor build`, `pod install`) before invoking the `ios` action directly.

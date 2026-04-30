@@ -1,0 +1,43 @@
+name: "Setup Meteor/Cordova Environment"
+description: >
+  Composite action that checks out the caller's repo, selects Xcode,
+  installs Node.js and Meteor, and runs `meteor npm install`.
+
+inputs:
+  xcode_path:
+    description: "Absolute path to Xcode.app"
+    required: false
+    default: "/Applications/Xcode_26.app"
+  node_version:
+    description: "Node.js version"
+    required: false
+    default: "20"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Select Xcode
+      shell: bash
+      env:
+        XCODE_PATH: ${{ inputs.xcode_path }}
+      run: |
+        sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+        xcodebuild -version
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+
+    - name: Install Meteor
+      shell: bash
+      run: |
+        curl https://install.meteor.com/ | sh
+        echo "$HOME/.meteor" >> $GITHUB_PATH
+
+    - name: Install Meteor dependencies
+      shell: bash
+      run: meteor npm install
