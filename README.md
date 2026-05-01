@@ -19,6 +19,22 @@ Xcode, installs Node.js and Meteor, and runs `meteor npm install`.
     node_version: "20"                       # optional, default
 ```
 
+### `setup-expo` — Composite action
+
+Sets up the Expo build environment: checks out the repo, selects Xcode,
+installs Node.js, and installs the project's JS dependencies (npm, yarn, or
+pnpm). Does **not** run `expo prebuild` — the workflow does that after the
+optional pre-build hook.
+
+```yaml
+- uses: mieweb/actions/setup-expo@v1
+  with:
+    xcode_path:        /Applications/Xcode_26.app  # optional, default
+    node_version:      "20"                        # optional, default
+    package_manager:   npm                         # optional: npm | yarn | pnpm
+    working_directory: .                           # optional: path to package.json
+```
+
 ### `ios` — Composite action
 
 Signs, archives, and optionally uploads an iOS app to TestFlight via Fastlane.
@@ -93,6 +109,77 @@ environment files, asset generation, etc.).
 `APPLE_TEAM_ID`, `MATCH_GIT_BASIC_AUTHORIZATION`, `MATCH_PASSWORD`,
 `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_P8_BASE64`
 
+### `ios-expo.yml` — Reusable workflow
+
+Full pipeline for Expo iOS apps: setup → optional pre-build hook → `expo
+prebuild` → CocoaPods → Fastlane sign/archive → TestFlight upload.
+
+For Expo apps only — the native `ios/` dir is regenerated each run from
+`app.json` / `app.config.js`. The caller's project must have `expo` in its
+dependencies. For bare React Native without `expo`, call the `ios` action
+directly.
+
+#### Basic usage
+
+```yaml
+jobs:
+  ios:
+    uses: mieweb/actions/.github/workflows/ios-expo.yml@v1
+    secrets: inherit
+    with:
+      app_identifier: com.example.app
+```
+
+#### With yarn / pnpm or a monorepo subdirectory
+
+```yaml
+jobs:
+  ios:
+    uses: mieweb/actions/.github/workflows/ios-expo.yml@v1
+    secrets: inherit
+    with:
+      app_identifier:    com.example.app
+      package_manager:   pnpm
+      working_directory: apps/mobile
+```
+
+#### With a pre-build hook (e.g. Firebase setup)
+
+```yaml
+jobs:
+  ios:
+    uses: mieweb/actions/.github/workflows/ios-expo.yml@v1
+    secrets: inherit
+    with:
+      app_identifier:   com.example.app
+      pre_build_script: scripts/setup-firebase.sh
+```
+
+The `pre_build_script` runs after JS deps are installed but **before** `expo
+prebuild`, so the script can place files (e.g. `GoogleService-Info.plist`)
+that the prebuild step picks up.
+
+#### Workflow inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `app_identifier` | **yes** | — | Bundle ID (must match `app.json` / Info.plist) |
+| `xcode_path` | | `/Applications/Xcode_26.app` | Absolute path to Xcode.app |
+| `node_version` | | `20` | Node.js version |
+| `package_manager` | | `npm` | `npm` \| `yarn` \| `pnpm` |
+| `working_directory` | | `.` | Path to the Expo project (where `package.json` lives) |
+| `pre_build_script` | | — | Path to a shell script in the caller's repo |
+| `signing_mode` | | `match` | `match` or `secrets` |
+| `upload_to_testflight` | | `true` | Upload IPA to TestFlight |
+
+#### Required secrets (org or repo level)
+
+`APPLE_TEAM_ID`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID`,
+`APPLE_API_KEY_P8_BASE64`, plus the match-mode pair
+(`MATCH_GIT_BASIC_AUTHORIZATION`, `MATCH_PASSWORD`) or the secrets-mode trio
+(`IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`,
+`IOS_PROVISIONING_PROFILE_BASE64`).
+
 ### `ios` action inputs
 
 | Input | Required | Default | Description |
@@ -128,6 +215,7 @@ a different cert or profile.
 - **`match_readonly` should always be `true` in CI.** Only set to `false` for
   one-time local seeding of the match signing repo.
 - **Xcode must be selected before calling the `ios` action directly.** The
-  `ios-meteor.yml` workflow and `setup-meteor` action handle this automatically.
+  `ios-meteor.yml` / `ios-expo.yml` workflows and the `setup-meteor` /
+  `setup-expo` actions handle this automatically.
 - **The `.xcworkspace` must already exist.** Build your native project (e.g.
-  `meteor build`, `pod install`) before invoking the `ios` action directly.
+  `meteor build`, `expo prebuild`) before invoking the `ios` action directly.
