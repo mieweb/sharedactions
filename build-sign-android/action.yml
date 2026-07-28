@@ -88,12 +88,31 @@ runs:
           PROJECT_DIR="$PROJECT_DIR_OVERRIDE"
         else
           SEARCH_DIR="${GITHUB_WORKSPACE}/${ANDROID_BUILD_DIR}"
-          GRADLEW=$(find "$SEARCH_DIR" -name "gradlew" -type f | head -1)
-          if [[ -z "$GRADLEW" ]]; then
-            echo "::error::No gradlew found under ${SEARCH_DIR}"
+          PROJECT_DIR=""
+          while IFS= read -r GRADLEW; do
+            CANDIDATE_DIR=$(dirname "$GRADLEW")
+
+            # Cordova can include nested tooling wrappers such as
+            # project/tools/gradlew. The Android application root must contain
+            # both the app module and a Gradle settings file.
+            if [[ ! -d "${CANDIDATE_DIR}/app" ]] || \
+               [[ ! -f "${CANDIDATE_DIR}/settings.gradle" && ! -f "${CANDIDATE_DIR}/settings.gradle.kts" ]]; then
+              continue
+            fi
+
+            # Prefer the shallowest valid project, then lexical order, so
+            # discovery does not depend on filesystem traversal order.
+            if [[ -z "$PROJECT_DIR" ]] || \
+               [[ ${#CANDIDATE_DIR} -lt ${#PROJECT_DIR} ]] || \
+               [[ ${#CANDIDATE_DIR} -eq ${#PROJECT_DIR} && "$CANDIDATE_DIR" < "$PROJECT_DIR" ]]; then
+              PROJECT_DIR="$CANDIDATE_DIR"
+            fi
+          done < <(find "$SEARCH_DIR" -name "gradlew" -type f -print | sort)
+
+          if [[ -z "$PROJECT_DIR" ]]; then
+            echo "::error::No Android Gradle application project found under ${SEARCH_DIR}"
             exit 1
           fi
-          PROJECT_DIR=$(dirname "$GRADLEW")
         fi
         echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
         echo "Resolved Gradle project: $PROJECT_DIR"
