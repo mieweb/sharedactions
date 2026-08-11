@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Android environment setup and reusable workflows now default to Android
+  Platform 36 and Build Tools 36.0.0 while preserving caller overrides.
+- The combined mobile workflow now exposes and forwards Android platform and
+  build-tools inputs.
+- Bundle builds now use Bundletool 1.18.2 to verify the signed AAB targets the
+  requested Android API level before Google Play upload. APK builds skip this
+  AAB-specific check.
+
 ## v2.1.0
 
 ### Added

@@ -148,9 +148,16 @@ and Meteor, then runs `meteor npm install`. Runs on `ubuntu-latest`.
   with:
     java_version:        "17"      # optional, default
     node_version:        "20"      # optional, default
-    android_api_level:   "34"      # optional, default
-    android_build_tools: "35.0.0"  # optional, default
+    android_api_level:   "36"      # optional, default
+    android_build_tools: "36.0.0"  # optional, default
 ```
+
+The action installs `platform-tools`, `platforms;android-36`, and
+`build-tools;36.0.0` by default. These inputs remain configurable for apps that
+temporarily need another supported platform/build-tools pair.
+
+SDK installation does not configure the consuming app. Each Meteor app must
+also declare target SDK 36 and compile SDK 36 in its own `mobile-config.js`.
 
 ### `run-meteor-build` — Composite action
 
@@ -433,8 +440,8 @@ jobs:
 | `meteor_server` | **yes** | — | Meteor DDP server URL |
 | `node_version` | | `20` | Node.js version |
 | `java_version` | | `17` | JDK version |
-| `android_api_level` | | `34` | Android SDK platform API level |
-| `android_build_tools` | | `35.0.0` | Android SDK build-tools version |
+| `android_api_level` | | `36` | Android SDK platform API level and expected AAB target SDK |
+| `android_build_tools` | | `36.0.0` | Android SDK build-tools version |
 | `pre_build_script` | | — | Inline bash to run before `meteor build` |
 | `signing_method` | | `direct-keystore` | `direct-keystore` or `fastlane` |
 | `build_type` | | `bundle` | `bundle` (AAB) or `apk` |
@@ -446,6 +453,11 @@ jobs:
 
 See [Android secrets](#android-secrets). Direct-keystore signing needs the four
 `ANDROID_*` secrets; publishing needs `GOOGLE_PLAY_JSON_KEY_BASE64`.
+
+For bundle builds, the workflow downloads checksum-verified, pinned Bundletool
+1.18.2 to read the generated AAB's `targetSdkVersion` after signing and before
+any Play upload. It fails when the artifact does not target the requested
+`android_api_level`. APK builds skip this AAB-specific guard.
 
 ### `build-mobile-from-meteor.yml` — Reusable workflow
 
@@ -483,6 +495,8 @@ jobs:
 | `upload_to_testflight` | | `true` | Upload IPA to TestFlight |
 | `android_app_identifier` | if building Android | — | Android applicationId |
 | `java_version` | | `17` | JDK version |
+| `android_api_level` | | `36` | Android SDK platform API level and expected AAB target SDK |
+| `android_build_tools` | | `36.0.0` | Android SDK build-tools version |
 | `android_signing_method` | | `direct-keystore` | Android `direct-keystore` or `fastlane` |
 | `android_build_type` | | `bundle` | `bundle` (AAB) or `apk` |
 | `upload_to_play` | | `true` | Upload the signed AAB to Google Play |

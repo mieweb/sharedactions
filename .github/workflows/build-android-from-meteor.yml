@@ -55,12 +55,12 @@ on:
         description: "Android SDK platform API level"
         required: false
         type: string
-        default: "34"
+        default: "36"
       android_build_tools:
         description: "Android SDK build-tools version"
         required: false
         type: string
-        default: "35.0.0"
+        default: "36.0.0"
 
       # ── Customisation hook ──────────────────────────────────────────────────
       pre_build_script:
@@ -166,7 +166,32 @@ jobs:
           key_alias:             ${{ secrets.ANDROID_KEY_ALIAS }}
           key_password:          ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      # ── 5. Upload to Google Play (optional) ───────────────────────────────
+      # ── 5. Verify the AAB targets the requested Android API ───────────────
+      - name: Verify AAB target SDK
+        if: inputs.build_type == 'bundle'
+        shell: bash
+        env:
+          AAB_PATH: ${{ steps.sign.outputs.signed_artifact_path }}
+          EXPECTED_TARGET_SDK: ${{ inputs.android_api_level }}
+          BUNDLETOOL_VERSION: "1.18.2"
+          BUNDLETOOL_SHA256: "378b5434cd1378bef6b2bc527b8c7f0ff2584b273830335bce54d6d0813c8584"
+        run: |
+          set -euo pipefail
+          bundletool_jar="${RUNNER_TEMP}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          curl --fail --silent --show-error --location \
+            --output "$bundletool_jar" \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          echo "${BUNDLETOOL_SHA256}  ${bundletool_jar}" | sha256sum --check
+          actual_target_sdk="$(java -jar "$bundletool_jar" dump manifest \
+            --bundle="$AAB_PATH" \
+            --xpath=/manifest/uses-sdk/@android:targetSdkVersion)"
+          if [ "$actual_target_sdk" != "$EXPECTED_TARGET_SDK" ]; then
+            echo "::error::AAB target SDK is ${actual_target_sdk}; expected ${EXPECTED_TARGET_SDK}. Update the consuming app's mobile-config.js target/compile SDK settings."
+            exit 1
+          fi
+          echo "Verified AAB target SDK ${actual_target_sdk}."
+
+      # ── 6. Upload to Google Play (optional) ───────────────────────────────
       - name: Publish to Google Play
         if: inputs.upload_to_play && inputs.build_type == 'bundle'
         uses: mieweb/actions/publish-android-to-play@v2
@@ -177,7 +202,7 @@ jobs:
           track:                ${{ inputs.play_track }}
           rollout_fraction:     ${{ inputs.rollout_fraction }}
 
-      # ── 6. Always keep the signed artifact as a build output ──────────────
+      # ── 7. Always keep the signed artifact as a build output ──────────────
       - name: Upload signed artifact
         uses: actions/upload-artifact@v4
         with:
