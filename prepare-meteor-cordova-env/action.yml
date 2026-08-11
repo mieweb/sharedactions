@@ -23,10 +23,9 @@ inputs:
     default: ${{ github.token }}
   ssh_key:
     description: >
-      SSH private key for cloning private git submodules (e.g. Meteor
-      packages hosted in separate private repos). Optional. When empty,
-      checkout uses the default token and submodules are skipped, preserving
-      the previous behaviour for callers without submodules.
+      SSH private key for cloning private git submodules and installing private
+      git dependencies. Optional. When empty, checkout uses the default token
+      and submodules are skipped.
     required: false
     default: ""
 
@@ -40,6 +39,12 @@ runs:
         # otherwise behave exactly as before (token auth, no submodules).
         submodules: ${{ inputs.ssh_key != '' && 'recursive' || 'false' }}
         ssh-key: ${{ inputs.ssh_key }}
+
+    - name: Setup SSH agent
+      if: inputs.ssh_key != ''
+      uses: webfactory/ssh-agent@v0.9.1
+      with:
+        ssh-private-key: ${{ inputs.ssh_key }}
 
     - name: Select Xcode
       shell: bash
