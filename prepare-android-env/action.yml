@@ -17,11 +17,11 @@ inputs:
   android_api_level:
     description: "Android SDK platform API level to install"
     required: false
-    default: "34"
+    default: "36"
   android_build_tools:
     description: "Android SDK build-tools version to install"
     required: false
-    default: "35.0.0"
+    default: "36.0.0"
   github_packages_token:
     description: >
       Token used to authenticate `meteor npm install` to GitHub Packages for
@@ -63,7 +63,7 @@ runs:
         node-version: ${{ inputs.node_version }}
 
     - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
 
     - name: Install Android SDK packages
       shell: bash

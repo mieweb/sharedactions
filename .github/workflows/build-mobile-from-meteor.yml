@@ -91,6 +91,16 @@ on:
         required: false
         type: string
         default: "17"
+      android_api_level:
+        description: "Android SDK platform API level"
+        required: false
+        type: string
+        default: "36"
+      android_build_tools:
+        description: "Android SDK build-tools version"
+        required: false
+        type: string
+        default: "36.0.0"
       android_signing_method:
         description: "Android signing: 'direct-keystore' or 'fastlane'"
         required: false
@@ -187,6 +197,8 @@ jobs:
       meteor_server:    ${{ inputs.meteor_server }}
       node_version:     ${{ inputs.node_version }}
       java_version:     ${{ inputs.java_version }}
+      android_api_level: ${{ inputs.android_api_level }}
+      android_build_tools: ${{ inputs.android_build_tools }}
       pre_build_script: ${{ inputs.pre_build_script }}
       signing_method:   ${{ inputs.android_signing_method }}
       build_type:       ${{ inputs.android_build_type }}
