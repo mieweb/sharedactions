@@ -21,13 +21,19 @@ platform :ios do
 
     # ── Signing: match mode ─────────────────────────────────────────────────
     if signing_mode == "match"
+      # Read the caller's choice before setup_ci: setup_ci unconditionally sets
+      # ENV["MATCH_READONLY"] = "true", so reading it afterwards would make the
+      # match_readonly input a no-op and a first-time profile could never be
+      # created from CI.
+      match_readonly = ENV.fetch("MATCH_READONLY", "true") != "false"
+
       # Creates a temporary keychain so match can import certs without GUI prompts
       setup_ci
 
       match(
         type:           ENV.fetch("MATCH_TYPE", "appstore"),
         app_identifier: app_id,
-        readonly:       ENV.fetch("MATCH_READONLY", "true") != "false",
+        readonly:       match_readonly,
         api_key:        api_key
       )
 
